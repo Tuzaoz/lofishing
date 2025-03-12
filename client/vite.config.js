@@ -8,6 +8,12 @@ export default defineConfig({
     port: 3000,
     cors: {
       origin: '*'
+    },
+    proxy: {
+      '/socket.io': {
+        target: 'http://localhost:3001',
+        ws: true
+      }
     }
   },
   resolve: {

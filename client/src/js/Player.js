@@ -168,136 +168,284 @@ export class Player {
         if (!this.characterModel) return;
         
         const loader = new FBXLoader();
-        // Tenta caminhos diferentes para garantir que o arquivo seja encontrado
-        loader.load('./assets/fishing-road.fbx', (fbx) => {
-            console.log('Vara de pesca carregada com sucesso do caminho ./assets/');
-            this.setupFishingRod(fbx);
-        }, 
-        // Progress callback
-        (xhr) => {
-            console.log('Vara de pesca: ' + (xhr.loaded / xhr.total * 100) + '% carregado');
-        }, 
-        // Error callback
-        (error) => {
-            console.error('Erro ao carregar do primeiro caminho, tentando alternativo', error);
+        
+        // Lista atualizada de possíveis caminhos para tentar
+        const paths = [
+            './assets/fishing-road.fbx',
+            '../assets/fishing-road.fbx',
+            'assets/fishing-road.fbx',
+            '/assets/fishing-road.fbx',
+            './public/assets/fishing-road.fbx',
+            '/client/assets/fishing-road.fbx'
+        ];
+        
+        console.log('Tentando carregar modelo da vara de pesca...');
+        
+        // Função para tentar carregar de um caminho
+        const tryLoadPath = (index) => {
+            if (index >= paths.length) {
+                console.error('Todos os caminhos falharam. Criando vara geométrica como fallback');
+                this.createGeometricRod();
+                return;
+            }
             
-            // Tenta caminho alternativo
-            loader.load('/assets/fishing-road.fbx', (fbx) => {
-                console.log('Vara de pesca carregada com sucesso do caminho /assets/');
-                this.setupFishingRod(fbx);
-            }, 
-            null, 
-            (error2) => {
-                console.error('Erro ao carregar do segundo caminho, tentando último recurso', error2);
-                
-                // Tenta caminho absoluto
-                loader.load('/client/public/assets/fishing-road.fbx', (fbx) => {
-                    console.log('Vara de pesca carregada com sucesso do caminho absoluto');
+            const path = paths[index];
+            console.log(`[Rod] Tentando carregar vara de pesca do caminho: ${path}`);
+            
+            loader.load(path, 
+                // Success callback
+                (fbx) => {
+                    console.log(`[Rod] Vara de pesca carregada com sucesso do caminho: ${path}`);
                     this.setupFishingRod(fbx);
-                }, 
-                null, 
-                (error3) => {
-                    console.error('Todos os caminhos falharam. Criando vara geométrica como fallback', error3);
-                    this.createGeometricRod();
-                });
-            });
-        });
+                },
+                // Progress callback
+                (xhr) => {
+                    console.log(`[Rod] ${path}: ${(xhr.loaded / xhr.total * 100).toFixed(2)}% carregado`);
+                },
+                // Error callback
+                (error) => {
+                    console.error(`[Rod] Erro ao carregar do caminho ${path}:`, error);
+                    // Tenta o próximo caminho
+                    tryLoadPath(index + 1);
+                }
+            );
+        };
+        
+        // Inicia a tentativa com o primeiro caminho
+        tryLoadPath(0);
     }
     
     // Método separado para configurar a vara depois de carregada
     setupFishingRod(fbx) {
         this.fishingRodModel = fbx;
-        console.log('Modelo da vara carregado com sucesso:', fbx);
+        console.log('[Rod] Modelo da vara carregado com sucesso:', fbx);
+        
+        // Debug do modelo da vara
+        this.debugModelStructure(fbx, 'Vara de Pesca');
         
         // Ajusta escala e posição da vara - AUMENTANDO a escala para maior visibilidade
-        this.fishingRodModel.scale.set(0.03, 0.03, 0.03);
+        this.fishingRodModel.scale.set(0.02, 0.02, 0.02); // Aumentado de 0.01 para 0.02
         
-        // Procura pelo osso da mão direita no esqueleto do personagem
-        this.rightHandBone = this.findRightHandBone(this.characterModel);
+        // Sabemos que o nome do osso é mixamorigRightHand, vamos procurar diretamente
+        this.rightHandBone = this.findNamedBone(this.characterModel, "mixamorigRightHand");
         
         if (this.rightHandBone) {
-            console.log('Osso da mão direita encontrado!', this.rightHandBone.name);
+            console.log('[Rod] Osso da mão direita encontrado! (mixamorigRightHand)');
             
             // Adiciona a vara de pesca como filha do osso da mão direita
             this.rightHandBone.add(this.fishingRodModel);
             
             // Ajustes na posição e rotação da vara em relação à mão
-            // Estas coordenadas podem precisar de ajustes com base no modelo específico
-            this.fishingRodModel.position.set(10, 0, 0);
-            this.fishingRodModel.rotation.set(0, Math.PI / 2, Math.PI / 2);
+            // Posição mais alta para ficar mais em pé
+            this.fishingRodModel.position.set(0.5, 1.0, 0);
+            // Rotação mais vertical
+            this.fishingRodModel.rotation.set(0, -90, 0);
+            
+            // Ajustando o tamanho da vara para ficar proporcional e maior
+            this.fishingRodModel.scale.set(1.0, 1.0, 1.0); // Aumentado de 0.5 para 1.0
+            
+            console.log('[Rod] Vara anexada ao osso mixamorigRightHand');
         } else {
-            console.warn('Não foi possível encontrar o osso da mão direita. Adicionando a vara ao modelo do personagem.');
+            console.warn('[Rod] Não foi possível encontrar o osso mixamorigRightHand. Tentando método alternativo.');
             
-            // Se não encontrar o osso da mão, adiciona ao modelo do personagem
-            this.characterModel.add(this.fishingRodModel);
+            // Tentativa alternativa - procurar por qualquer osso da mão direita
+            this.rightHandBone = this.findRightHandBone(this.characterModel);
             
-            // Posição aproximada para a mão direita - AJUSTANDO posição para ser mais visível
-            this.fishingRodModel.position.set(30, 110, 15);
-            this.fishingRodModel.rotation.set(0, Math.PI / 2, Math.PI / 2);
+            if (this.rightHandBone) {
+                console.log('[Rod] Encontrado osso alternativo:', this.rightHandBone.name);
+                this.rightHandBone.add(this.fishingRodModel);
+                this.fishingRodModel.position.set(0.5, 1.0, 0);
+                this.fishingRodModel.rotation.set(0, -90, 0);
+                this.fishingRodModel.scale.set(1.0, 1.0, 1.0);
+            } else {
+                // Se não encontrar o osso da mão, adiciona ao modelo do personagem
+                console.warn('[Rod] Nenhum osso da mão encontrado. Adicionando a vara ao modelo do personagem.');
+                this.characterModel.add(this.fishingRodModel);
+                
+                // Posição aproximada para a mão direita - AJUSTANDO posição para ser mais visível
+                this.fishingRodModel.position.set(30, 110, 15);
+                this.fishingRodModel.rotation.set(0, 0, 0);
+            }
         }
         
-        // Definindo como visível inicialmente
-        this.fishingRodModel.visible = true;
+        // Inicialmente invisível até que a animação de pesca seja ativada
+        this.fishingRodModel.visible = false;
         
-        // Garantindo que todos os meshes dentro do modelo estejam visíveis
+        // Garantindo que todos os meshes dentro do modelo estejam visíveis quando a vara for mostrada
         this.fishingRodModel.traverse(child => {
             if (child.isMesh) {
                 child.visible = true;
                 child.castShadow = true;
                 child.receiveShadow = true;
-                console.log('Mesh dentro da vara de pesca:', child.name);
+                console.log('[Rod] Mesh dentro da vara de pesca:', child.name);
             }
         });
         
-        console.log('Modelo da vara de pesca configurado com sucesso');
+        console.log('[Rod] Modelo da vara de pesca configurado com sucesso');
+    }
+    
+    // Método para debugar a estrutura de um modelo
+    debugModelStructure(model, modelName) {
+        console.log(`\n===== ESTRUTURA DO MODELO: ${modelName} =====`);
+        
+        // Contadores para estatísticas
+        let meshCount = 0;
+        let materialCount = 0;
+        let textureCount = 0;
+        let boneCount = 0;
+        
+        // Função para analisar recursivamente o modelo
+        const analyzeObject = (obj, indent = 0) => {
+            const spacing = ' '.repeat(indent * 2);
+            const type = obj.type || 'Unknown';
+            console.log(`${spacing}${obj.name || 'unnamed'} [${type}]`);
+            
+            // Detecta tipos específicos
+            if (obj.isMesh) {
+                meshCount++;
+                console.log(`${spacing}  - MESH com geometria: ${obj.geometry ? obj.geometry.type : 'nenhuma'}`);
+                console.log(`${spacing}  - Material: ${obj.material ? obj.material.type : 'nenhum'}`);
+            }
+            
+            if (obj.isBone) {
+                boneCount++;
+            }
+            
+            if (obj.material) {
+                materialCount++;
+                if (obj.material.map) textureCount++;
+            }
+            
+            // Processa filhos recursivamente
+            if (obj.children && obj.children.length > 0) {
+                obj.children.forEach(child => {
+                    analyzeObject(child, indent + 1);
+                });
+            }
+        };
+        
+        // Analisa o modelo
+        analyzeObject(model);
+        
+        // Exibe estatísticas
+        console.log(`\n----- ESTATÍSTICAS DO MODELO -----`);
+        console.log(`Meshes: ${meshCount}`);
+        console.log(`Materiais: ${materialCount}`);
+        console.log(`Texturas: ${textureCount}`);
+        console.log(`Ossos: ${boneCount}`);
+        console.log(`===================================\n`);
+    }
+    
+    // Método específico para encontrar um osso pelo nome exato
+    findNamedBone(model, boneName) {
+        let foundBone = null;
+        
+        // Função para procurar recursivamente
+        const searchForBone = (object) => {
+            // Verifica se o objeto atual é um osso com o nome procurado
+            if (object.isBone && object.name === boneName) {
+                foundBone = object;
+                return true;
+            }
+            
+            // Se não, procura nos filhos
+            if (object.children) {
+                for (const child of object.children) {
+                    if (searchForBone(child)) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        };
+        
+        // Inicia a busca
+        searchForBone(model);
+        
+        if (foundBone) {
+            console.log(`Osso ${boneName} encontrado!`);
+        } else {
+            console.warn(`Osso ${boneName} NÃO encontrado na hierarquia do modelo.`);
+            
+            // Para depuração, lista todos os ossos disponíveis
+            const allBones = [];
+            model.traverse(obj => {
+                if (obj.isBone) {
+                    allBones.push(obj.name);
+                }
+            });
+            
+            console.log('Ossos disponíveis:', allBones);
+        }
+        
+        return foundBone;
     }
     
     // Método de fallback para criar uma vara de pesca geométrica simples
     createGeometricRod() {
-        console.log('Criando vara de pesca geométrica como fallback');
+        console.log('[Rod] Criando vara de pesca geométrica como fallback');
         
         // Cria um grupo para representar a vara de pesca
         this.fishingRodModel = new THREE.Group();
         
-        // Cria o corpo da vara (cilindro alongado)
-        const rodGeometry = new THREE.CylinderGeometry(0.1, 0.05, 30, 8);
-        const rodMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Marrom
+        // Cria o corpo da vara (cilindro alongado) - Aumentando comprimento e tornando mais visível
+        const rodGeometry = new THREE.CylinderGeometry(0.15, 0.08, 45, 8); // Aumentado tamanho e detalhes
+        const rodMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513, emissive: 0x3d2314 }); // Marrom com emissão
         const rod = new THREE.Mesh(rodGeometry, rodMaterial);
         
-        // Rotaciona para ficar na horizontal
-        rod.rotation.z = Math.PI / 2;
+        // Rotaciona para ficar mais na vertical
+        rod.rotation.z = Math.PI / 3; // Alterado de Math.PI/2 para Math.PI/3 para ficar mais vertical
         
         // Adiciona ao grupo
         this.fishingRodModel.add(rod);
         
-        // Cria a empunhadura (cilindro mais grosso)
-        const handleGeometry = new THREE.CylinderGeometry(0.15, 0.15, 5, 8);
-        const handleMaterial = new THREE.MeshLambertMaterial({ color: 0x654321 }); // Marrom escuro
+        // Cria a empunhadura (cilindro mais grosso) - Aumentando tamanho
+        const handleGeometry = new THREE.CylinderGeometry(0.25, 0.25, 8, 8); // Aumentado de 0.15 para 0.25 e de 5 para 8
+        const handleMaterial = new THREE.MeshLambertMaterial({ color: 0x654321, emissive: 0x2a1a0d }); // Marrom escuro com emissão
         const handle = new THREE.Mesh(handleGeometry, handleMaterial);
         
-        // Posiciona na ponta da vara
-        handle.position.set(-12, 0, 0);
-        handle.rotation.z = Math.PI / 2;
+        // Posiciona na ponta da vara - Ajustado para nova rotação
+        handle.position.set(-18, 0, 0);
+        handle.rotation.z = Math.PI / 3; // Alterado para corresponder com a vara
         
         // Adiciona ao grupo
         this.fishingRodModel.add(handle);
         
-        // Procura pelo osso da mão direita
-        this.rightHandBone = this.findRightHandBone(this.characterModel);
+        // Adiciona detalhes adicionais para maior visibilidade
+        // Ponta da vara (cone para maior destaque)
+        const tipGeometry = new THREE.ConeGeometry(0.1, 1.5, 8);
+        const tipMaterial = new THREE.MeshLambertMaterial({ color: 0xC0C0C0, emissive: 0x303030 }); // Prateado
+        const tip = new THREE.Mesh(tipGeometry, tipMaterial);
+        tip.position.set(21, 0, 0);
+        tip.rotation.z = Math.PI / 3;
+        this.fishingRodModel.add(tip);
         
-        if (this.rightHandBone) {
-            console.log('Osso da mão direita encontrado para vara geométrica!', this.rightHandBone.name);
-            this.rightHandBone.add(this.fishingRodModel);
-            this.fishingRodModel.position.set(10, 0, 0);
-            this.fishingRodModel.rotation.set(0, 0, 0);
-        } else {
-            console.warn('Usando posição fixa para vara geométrica');
-            this.characterModel.add(this.fishingRodModel);
-            this.fishingRodModel.position.set(30, 110, 15);
+        // Procura pelo osso da mão direita - tentamos especificamente o mixamorigRightHand primeiro
+        this.rightHandBone = this.findNamedBone(this.characterModel, "mixamorigRightHand");
+        
+        if (!this.rightHandBone) {
+            // Se não encontrar, tenta o método geral
+            this.rightHandBone = this.findRightHandBone(this.characterModel);
         }
         
-        // Tornando visível
-        this.fishingRodModel.visible = true;
+        if (this.rightHandBone) {
+            console.log('[Rod] Osso da mão encontrado para vara geométrica:', this.rightHandBone.name);
+            this.rightHandBone.add(this.fishingRodModel);
+            this.fishingRodModel.position.set(0.5, 1.5, 0); // Posição mais alta
+            this.fishingRodModel.rotation.set(0, -90, 0); // Mais vertical
+            this.fishingRodModel.scale.set(1.5, 1.5, 1.5); // Escala maior
+        } else {
+            console.warn('[Rod] Nenhum osso da mão encontrado. Adicionando a vara ao modelo do personagem.');
+            this.characterModel.add(this.fishingRodModel);
+            
+            // Posição aproximada para a mão direita - AJUSTANDO posição para ser mais visível
+            this.fishingRodModel.position.set(35, 120, 20);
+            this.fishingRodModel.rotation.set(0, -90, 0);
+        }
+        
+        // Inicialmente invisível até que a animação de pesca seja ativada
+        this.fishingRodModel.visible = false;
     }
     
     // Método para encontrar o osso da mão direita no esqueleto
@@ -802,7 +950,7 @@ export class Player {
         this.isFishing = true;
         this.action = 'fishing';
         
-        console.log('Iniciando pesca...');
+        console.log('[Fishing] Iniciando pesca...');
         
         // Reproduz a animação de pesca
         if (this.characterModel && this.mixer) {
@@ -811,18 +959,55 @@ export class Player {
         
         // Mostra o modelo da vara de pesca FBX se estiver disponível
         if (this.fishingRodModel) {
-            console.log('Mostrando vara de pesca modelo FBX');
+            console.log('[Fishing] Mostrando vara de pesca modelo FBX');
+            
+            // Verificar se a vara está corretamente conectada ao osso da mão
+            if (!this.rightHandBone || !this.rightHandBone.children.includes(this.fishingRodModel)) {
+                console.log('[Fishing] Reconectando vara ao osso da mão direita...');
+                
+                // Tenta reconectar ao osso
+                this.rightHandBone = this.findNamedBone(this.characterModel, "mixamorigRightHand");
+                
+                if (this.rightHandBone) {
+                    // Remove do parent atual se existir
+                    if (this.fishingRodModel.parent) {
+                        this.fishingRodModel.parent.remove(this.fishingRodModel);
+                    }
+                    
+                    // Adiciona ao osso da mão
+                    this.rightHandBone.add(this.fishingRodModel);
+                    
+                    // Ajusta posição, rotação e escala para maior visibilidade
+                    this.fishingRodModel.position.set(0.5, 1.5, 0);  // Posição mais alta
+                    this.fishingRodModel.rotation.set(0, -90, 0);  // Mais vertical
+                    this.fishingRodModel.scale.set(1.5, 1.5, 1.5);  // Escala maior
+                    console.log('[Fishing] Vara reposicionada e redimensionada para maior visibilidade');
+                }
+            }
+            
+            // Agora torna a vara visível
             this.fishingRodModel.visible = true;
             
             // Garante que todos os meshes da vara estão visíveis
             this.fishingRodModel.traverse(child => {
                 if (child.isMesh) {
                     child.visible = true;
-                    console.log('Tornando mesh visível:', child.name);
+                    child.material.needsUpdate = true;
+                    console.log('[Fishing] Tornando mesh visível:', child.name);
                 }
             });
         } else {
-            console.warn('Modelo da vara de pesca não está disponível!');
+            console.warn('[Fishing] Modelo da vara de pesca não está disponível! Tentando carregar...');
+            this.loadFishingRodModel(); // Tenta carregar se não estiver disponível
+            
+            // Se o modelo não estiver disponível mesmo após tentativa de carregamento, cria uma vara geométrica
+            setTimeout(() => {
+                if (!this.fishingRodModel && this.isFishing) {
+                    console.warn('[Fishing] Modelo da vara ainda não disponível. Criando vara geométrica...');
+                    this.createGeometricRod();
+                    this.fishingRodModel.visible = true;
+                }
+            }, 1000);
         }
         
         // Torna a linha visível
@@ -878,8 +1063,8 @@ export class Player {
         // Esconde o modelo da vara de pesca FBX
         if (this.fishingRodModel) {
             console.log('Escondendo vara de pesca modelo FBX');
-            // Comentando a linha abaixo para manter a vara sempre visível durante debug
-            // this.fishingRodModel.visible = false;
+            // Descomentar a linha abaixo para garantir que a vara fique invisível
+            this.fishingRodModel.visible = false;
         }
         
         // Marca que está recolhendo para parar a animação de mordida
@@ -1071,25 +1256,39 @@ export class Player {
         }
     }
     
-    update() {
+    update(deltaTime) {
         // Atualiza a posição da tag de nome
         if (this.nameTag) {
             const position = this.getPosition();
             const vector = new THREE.Vector3(position.x, position.y + 2.5, position.z);
-            // Usar a câmera atual da cena, não procurar por um objeto com nome 'camera'
+            
+            // Usa a câmera correta
             if (this.camera) {
+                // Projeta a posição 3D para coordenadas de tela
                 vector.project(this.camera);
+                
+                // Converte para coordenadas CSS
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                
+                // Atualiza a posição da tag
+                this.nameTag.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+                
+                // Ajusta a opacidade baseada na distância
+                const distance = new THREE.Vector3(position.x, position.y, position.z).distanceTo(this.camera.position);
+                const opacity = 1.0 - Math.min(Math.max((distance - 5) / 15, 0), 0.8);
+                this.nameTag.style.opacity = opacity.toFixed(2);
             } else if (this.fishingGame && this.fishingGame.camera) {
+                // Tenta usar a câmera do jogo se disponível
                 vector.project(this.fishingGame.camera);
-            } else {
-                // Se não encontrar a câmera, não tenta renderizar a tag
-                return;
+                
+                // Converte para coordenadas CSS
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                
+                // Atualiza a posição da tag
+                this.nameTag.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
             }
-            
-            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-            const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
-            
-            this.nameTag.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
         }
         
         // Se for o jogador local, rotaciona o modelo 3D para seguir a direção da câmera
@@ -1102,6 +1301,39 @@ export class Player {
             
             // Aplica a rotação ao modelo
             this.characterModel.rotation.y = rotationY;
+        }
+        
+        // VERSÃO MELHORADA: Controla a visibilidade da vara de pesca com base no estado de pesca
+        if (this.fishingRodModel) {
+            // Mostra apenas quando estiver pescando
+            if (this.isFishing) {
+                this.fishingRodModel.visible = true;
+                
+                // Garante que todos os meshes da vara estão visíveis
+                this.fishingRodModel.traverse(child => {
+                    if (child.isMesh) {
+                        child.visible = true;
+                    }
+                });
+                
+                // Verifica se a vara está corretamente conectada ao osso da mão
+                if (this.rightHandBone && !this.rightHandBone.children.includes(this.fishingRodModel)) {
+                    // Remove do parent atual se existir
+                    if (this.fishingRodModel.parent) {
+                        this.fishingRodModel.parent.remove(this.fishingRodModel);
+                    }
+                    
+                    // Adiciona ao osso da mão
+                    this.rightHandBone.add(this.fishingRodModel);
+                    
+                    // Ajusta posição, rotação e escala
+                    this.fishingRodModel.position.set(0.5, 1.0, 0);
+                    this.fishingRodModel.rotation.set(0, -90, 0);
+                    this.fishingRodModel.scale.set(1.0, 1.0, 1.0);
+                }
+            } else {
+                this.fishingRodModel.visible = false;
+            }
         }
 
         // Atualiza a animação com base no movimento (apenas se não estiver pescando)
@@ -1130,101 +1362,92 @@ export class Player {
             this.mixer.update(this.clock.getDelta());
         }
     }
-    
+
     getPosition() {
         return this.position;
     }
-    
+
     getCurrentAction() {
         return this.action;
     }
     
-    remove() {
-        // Remove o modelo do jogador da cena
-        if (this.model) {
-            this.scene.remove(this.model);
-        }
+    // Add the missing onFishBite method
+    onFishBite(isActive) {
+        console.log(`[Fishing] Fish bite ${isActive ? 'started' : 'ended'}`);
         
-        // Remove a tag de nome
-        if (this.nameTag && this.nameTag.parentNode) {
-            this.nameTag.parentNode.removeChild(this.nameTag);
-        }
+        // Se não estiver pescando, ignora o evento
+        if (!this.isFishing) return;
         
-        // Remove a vara de pesca em primeira pessoa
-        if (this.isLocal && this.firstPersonRod && this.camera) {
-            this.camera.remove(this.firstPersonRod);
-        }
-        
-        // Remove referências ao modelo da vara de pesca
-        this.fishingRodModel = null;
-        this.rightHandBone = null;
-    }
-    
-    onFishBite(isHitting, status = null) {
-        // Se não estiver pescando, ou se estiver recolhendo a linha, ignora
-        if (!this.isFishing || this.isReeling) return;
-        
-        // Se for o jogador local, anima a vara de pesca de acordo com o estado do peixe
-        if (this.isLocal && this.firstPersonRod) {
-            // Se um peixe está mordendo a isca
-            if (isHitting) {
-                // Reproduz uma animação específica para quando o peixe morde
-                if (this.characterModel && this.mixer && this.animations['bite']) {
-                    this.playAnimation('bite', 0.2);
-                }
-                
-                // Cria uma animação de vibração da vara
-                const originalRotation = {
+        if (isActive) {
+            // Inicia a animação de mordida (vibração da vara)
+            if (this.isLocal && this.firstPersonRod) {
+                // Salva a rotação atual
+                const currentRotation = {
                     x: this.firstPersonRod.rotation.x,
                     y: this.firstPersonRod.rotation.y,
                     z: this.firstPersonRod.rotation.z
                 };
                 
-                // Limpa animação anterior se existir
+                // Para qualquer animação anterior de mordida
                 if (this.biteAnimation) {
                     clearInterval(this.biteAnimation);
                 }
                 
-                // Cria uma nova animação de vibração mais intensa
+                // Cria uma nova animação de vibração
                 this.biteAnimation = setInterval(() => {
-                    // Vibração aleatória da vara
-                    this.firstPersonRod.rotation.x = originalRotation.x + (Math.random() - 0.5) * 0.3;
-                    this.firstPersonRod.rotation.y = originalRotation.y + (Math.random() - 0.5) * 0.1;
-                    this.firstPersonRod.rotation.z = originalRotation.z + (Math.random() - 0.5) * 0.1;
+                    if (!this.isFishing || this.isReeling) {
+                        clearInterval(this.biteAnimation);
+                        this.biteAnimation = null;
+                        return;
+                    }
+                    
+                    // Aplica uma pequena vibração aleatória
+                    this.firstPersonRod.rotation.x = currentRotation.x + (Math.random() - 0.5) * 0.1;
+                    this.firstPersonRod.rotation.y = currentRotation.y + (Math.random() - 0.5) * 0.05;
+                    this.firstPersonRod.rotation.z = currentRotation.z + (Math.random() - 0.5) * 0.05;
                 }, 50);
-            } else {
-                // Quando o peixe para de morder, volta para a posição original
+            } else if (this.fishingRodModel) {
+                // Para jogadores não locais ou em terceira pessoa
+                // Adiciona vibração ao modelo da vara FBX
+                const originalPosition = new THREE.Vector3().copy(this.fishingRodModel.position);
+                
                 if (this.biteAnimation) {
                     clearInterval(this.biteAnimation);
-                    this.biteAnimation = null;
                 }
                 
-                // Retorna a vara à posição da animação de pesca
-                this.firstPersonRod.rotation.x = this.initialRodRotation.x;
-                this.firstPersonRod.rotation.y = this.initialRodRotation.y;
-                this.firstPersonRod.rotation.z = this.initialRodRotation.z;
-                
-                // Se foi uma captura bem-sucedida
-                if (status === 'catch' && this.characterModel && this.mixer) {
-                    // Reproduz uma animação de captura, se disponível
-                    if (this.animations['catch']) {
-                        this.playAnimation('catch', 0.3);
+                this.biteAnimation = setInterval(() => {
+                    if (!this.isFishing || this.isReeling) {
+                        clearInterval(this.biteAnimation);
+                        this.biteAnimation = null;
                         
-                        // Volta para a animação de pesca após a animação de captura
-                        setTimeout(() => {
-                            if (this.isFishing) {
-                                this.playAnimation('fishing');
-                            }
-                        }, 2000); // Duração aproximada da animação de captura
-                    } else {
-                        // Se não houver animação de captura, volta para a animação de pesca
-                        this.playAnimation('fishing');
+                        // Restaura a posição original
+                        if (this.fishingRodModel) {
+                            this.fishingRodModel.position.copy(originalPosition);
+                        }
+                        return;
                     }
-                } else {
-                    // Se não foi captura ou não temos o modelo, volta para a animação normal de pesca
-                    if (this.characterModel && this.mixer) {
-                        this.playAnimation('fishing');
+                    
+                    // Vibração aleatória na posição da vara
+                    if (this.fishingRodModel) {
+                        this.fishingRodModel.position.set(
+                            originalPosition.x + (Math.random() - 0.5) * 0.2,
+                            originalPosition.y + (Math.random() - 0.5) * 0.2,
+                            originalPosition.z + (Math.random() - 0.5) * 0.2
+                        );
                     }
+                }, 50);
+            }
+        } else {
+            // Para a animação de vibração
+            if (this.biteAnimation) {
+                clearInterval(this.biteAnimation);
+                this.biteAnimation = null;
+                
+                // Restaura a posição/rotação original
+                if (this.isLocal && this.firstPersonRod && this.initialRodRotation) {
+                    this.firstPersonRod.rotation.x = this.initialRodRotation.x;
+                    this.firstPersonRod.rotation.y = this.initialRodRotation.y;
+                    this.firstPersonRod.rotation.z = this.initialRodRotation.z;
                 }
             }
         }

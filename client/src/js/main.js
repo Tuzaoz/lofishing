@@ -498,10 +498,7 @@ class Game {
 
     setupSocketConnection() {
         // Connect to the ngrok URL instead of the default
-        this.socket = io('https://ff76-2804-1b2-6243-6aed-6169-b0c0-9d5a-f1ed.ngrok-free.app', {
-            transports: ['websocket', 'polling'],
-            withCredentials: true
-        });
+        this.socket = io()
 
         // Conexão estabelecida com o servidor
         this.socket.on('connect', () => {
