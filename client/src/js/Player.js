@@ -33,6 +33,15 @@ export class Player {
         this.currentAnimation = null;
         this.clock = new THREE.Clock();
         
+        // Novas variáveis para acompanhar movimento e posição
+        this.isMoving = false;
+        this.lastPosition = new THREE.Vector3();
+        this.modelOffset = 0; // Reduzido de 1.5 para 0.6 - Distância atrás da câmera
+        
+        // Nova variável para o modelo da vara de pesca FBX
+        this.fishingRodModel = null;
+        this.rightHandBone = null;
+        
         // Se inscreve nos eventos do jogo de pesca
         if (this.isLocal && fishingGame) {
             fishingGame.onFishBiteStart = () => this.onFishBite(true);
@@ -63,10 +72,10 @@ export class Player {
         
         // Se for o jogador local e em primeira pessoa
         if (this.isLocal && this.camera && this.controls) {
-            // Posiciona a câmera no topo do modelo do jogador
+            // Posiciona a câmera no topo do modelo do jogador (altura da cabeça)
             this.camera.position.set(
                 this.model.position.x,
-                this.model.position.y + 0.7, // Um pouco acima do centro do cilindro
+                this.model.position.y + 1.9, // Aumentado de 2.3 para 1.9 para ficar um pouco acima da cabeça
                 this.model.position.z
             );
             
@@ -120,7 +129,29 @@ export class Player {
                 this.playAnimation('idle');
             }
             
+            // Carrega a animação de caminhada
+            loader.load('assets/walking.fbx', (walkingFbx) => {
+                if (walkingFbx.animations && walkingFbx.animations.length > 0) {
+                    // Usa a primeira animação do arquivo
+                    this.animations['walking'] = walkingFbx.animations[0];
+                    console.log('Animação de caminhada carregada com sucesso');
+                } else {
+                    console.warn('Arquivo walking.fbx não contém animações');
+                }
+            }, 
+            // Progress callback
+            (xhr) => {
+                console.log('Animação de caminhada: ' + (xhr.loaded / xhr.total * 100) + '% carregado');
+            },
+            // Error callback
+            (error) => {
+                console.error('Erro ao carregar a animação de caminhada', error);
+            });
+            
             console.log('Modelo 3D carregado com sucesso', this.animations);
+            
+            // Carrega e conecta o modelo da vara de pesca depois que o personagem é carregado
+            this.loadFishingRodModel();
         }, 
         // Progress callback
         (xhr) => {
@@ -130,6 +161,283 @@ export class Player {
         (error) => {
             console.error('Erro ao carregar o modelo 3D', error);
         });
+    }
+    
+    // Novo método para carregar e conectar o modelo da vara de pesca
+    loadFishingRodModel() {
+        if (!this.characterModel) return;
+        
+        const loader = new FBXLoader();
+        // Tenta caminhos diferentes para garantir que o arquivo seja encontrado
+        loader.load('./assets/fishing-road.fbx', (fbx) => {
+            console.log('Vara de pesca carregada com sucesso do caminho ./assets/');
+            this.setupFishingRod(fbx);
+        }, 
+        // Progress callback
+        (xhr) => {
+            console.log('Vara de pesca: ' + (xhr.loaded / xhr.total * 100) + '% carregado');
+        }, 
+        // Error callback
+        (error) => {
+            console.error('Erro ao carregar do primeiro caminho, tentando alternativo', error);
+            
+            // Tenta caminho alternativo
+            loader.load('/assets/fishing-road.fbx', (fbx) => {
+                console.log('Vara de pesca carregada com sucesso do caminho /assets/');
+                this.setupFishingRod(fbx);
+            }, 
+            null, 
+            (error2) => {
+                console.error('Erro ao carregar do segundo caminho, tentando último recurso', error2);
+                
+                // Tenta caminho absoluto
+                loader.load('/client/public/assets/fishing-road.fbx', (fbx) => {
+                    console.log('Vara de pesca carregada com sucesso do caminho absoluto');
+                    this.setupFishingRod(fbx);
+                }, 
+                null, 
+                (error3) => {
+                    console.error('Todos os caminhos falharam. Criando vara geométrica como fallback', error3);
+                    this.createGeometricRod();
+                });
+            });
+        });
+    }
+    
+    // Método separado para configurar a vara depois de carregada
+    setupFishingRod(fbx) {
+        this.fishingRodModel = fbx;
+        console.log('Modelo da vara carregado com sucesso:', fbx);
+        
+        // Ajusta escala e posição da vara - AUMENTANDO a escala para maior visibilidade
+        this.fishingRodModel.scale.set(0.03, 0.03, 0.03);
+        
+        // Procura pelo osso da mão direita no esqueleto do personagem
+        this.rightHandBone = this.findRightHandBone(this.characterModel);
+        
+        if (this.rightHandBone) {
+            console.log('Osso da mão direita encontrado!', this.rightHandBone.name);
+            
+            // Adiciona a vara de pesca como filha do osso da mão direita
+            this.rightHandBone.add(this.fishingRodModel);
+            
+            // Ajustes na posição e rotação da vara em relação à mão
+            // Estas coordenadas podem precisar de ajustes com base no modelo específico
+            this.fishingRodModel.position.set(10, 0, 0);
+            this.fishingRodModel.rotation.set(0, Math.PI / 2, Math.PI / 2);
+        } else {
+            console.warn('Não foi possível encontrar o osso da mão direita. Adicionando a vara ao modelo do personagem.');
+            
+            // Se não encontrar o osso da mão, adiciona ao modelo do personagem
+            this.characterModel.add(this.fishingRodModel);
+            
+            // Posição aproximada para a mão direita - AJUSTANDO posição para ser mais visível
+            this.fishingRodModel.position.set(30, 110, 15);
+            this.fishingRodModel.rotation.set(0, Math.PI / 2, Math.PI / 2);
+        }
+        
+        // Definindo como visível inicialmente
+        this.fishingRodModel.visible = true;
+        
+        // Garantindo que todos os meshes dentro do modelo estejam visíveis
+        this.fishingRodModel.traverse(child => {
+            if (child.isMesh) {
+                child.visible = true;
+                child.castShadow = true;
+                child.receiveShadow = true;
+                console.log('Mesh dentro da vara de pesca:', child.name);
+            }
+        });
+        
+        console.log('Modelo da vara de pesca configurado com sucesso');
+    }
+    
+    // Método de fallback para criar uma vara de pesca geométrica simples
+    createGeometricRod() {
+        console.log('Criando vara de pesca geométrica como fallback');
+        
+        // Cria um grupo para representar a vara de pesca
+        this.fishingRodModel = new THREE.Group();
+        
+        // Cria o corpo da vara (cilindro alongado)
+        const rodGeometry = new THREE.CylinderGeometry(0.1, 0.05, 30, 8);
+        const rodMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Marrom
+        const rod = new THREE.Mesh(rodGeometry, rodMaterial);
+        
+        // Rotaciona para ficar na horizontal
+        rod.rotation.z = Math.PI / 2;
+        
+        // Adiciona ao grupo
+        this.fishingRodModel.add(rod);
+        
+        // Cria a empunhadura (cilindro mais grosso)
+        const handleGeometry = new THREE.CylinderGeometry(0.15, 0.15, 5, 8);
+        const handleMaterial = new THREE.MeshLambertMaterial({ color: 0x654321 }); // Marrom escuro
+        const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+        
+        // Posiciona na ponta da vara
+        handle.position.set(-12, 0, 0);
+        handle.rotation.z = Math.PI / 2;
+        
+        // Adiciona ao grupo
+        this.fishingRodModel.add(handle);
+        
+        // Procura pelo osso da mão direita
+        this.rightHandBone = this.findRightHandBone(this.characterModel);
+        
+        if (this.rightHandBone) {
+            console.log('Osso da mão direita encontrado para vara geométrica!', this.rightHandBone.name);
+            this.rightHandBone.add(this.fishingRodModel);
+            this.fishingRodModel.position.set(10, 0, 0);
+            this.fishingRodModel.rotation.set(0, 0, 0);
+        } else {
+            console.warn('Usando posição fixa para vara geométrica');
+            this.characterModel.add(this.fishingRodModel);
+            this.fishingRodModel.position.set(30, 110, 15);
+        }
+        
+        // Tornando visível
+        this.fishingRodModel.visible = true;
+    }
+    
+    // Método para encontrar o osso da mão direita no esqueleto
+    findRightHandBone(model) {
+        let rightHandBone = null;
+        const possibleNames = [
+            'RightHand', 'Hand_R', 'right_hand', 'hand_right', 'mao_direita', 
+            'hand.r', 'hand_r', 'handright', 'righthand', 'right.hand',
+            'r_hand', 'rhand', 'r_wrist', 'rightwrist', 'wrist_r',
+            'mixamorigRightHand', 'mixamorig:RightHand', 'mixamorig_RightHand',
+            // Nomes básicos de ossos (pode identificar errado, mas é melhor que nada)
+            'right', 'hand', 'arm', 'palm', 'finger', 'wrist'
+        ];
+        
+        // Para depuração, imprime todos os nomes de ossos
+        console.log('Procurando pelo osso da mão direita...');
+        const allBoneNames = [];
+        
+        // Função para coletar nomes de todos os ossos
+        const collectBoneNames = (object) => {
+            if (object.isBone) {
+                allBoneNames.push(object.name);
+            }
+            
+            if (object.children) {
+                for (const child of object.children) {
+                    collectBoneNames(child);
+                }
+            }
+        };
+        
+        // Coleta todos os nomes de ossos para depuração
+        collectBoneNames(model);
+        console.log('Ossos encontrados:', allBoneNames);
+        
+        if (allBoneNames.length === 0) {
+            console.warn('NENHUM OSSO ENCONTRADO NO MODELO! Isso pode indicar que o modelo não tem esqueleto.');
+            return null;
+        }
+        
+        // Imprime toda a hierarquia do modelo para depuração
+        console.log('Hierarquia do modelo:');
+        this.printModelHierarchy(model);
+        
+        // Função para procurar recursivamente nos filhos do modelo
+        const searchBones = (object) => {
+            if (object.isBone) {
+                // Verifica se o nome do osso contém "right" e "hand" (case insensitive)
+                const name = object.name.toLowerCase();
+                if ((name.includes('right') && name.includes('hand')) || 
+                    (name.includes('r_') && name.includes('hand')) ||
+                    (name.includes('hand_r')) ||
+                    (name.includes('hand') && name.includes('r')) ||
+                    possibleNames.some(boneName => 
+                        object.name.toLowerCase() === boneName.toLowerCase())) {
+                    rightHandBone = object;
+                    return true;
+                }
+            }
+            
+            // Se não encontrou, procura nos filhos
+            if (object.children) {
+                for (const child of object.children) {
+                    if (searchBones(child)) {
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        };
+        
+        // Começa a busca no modelo do personagem
+        searchBones(model);
+        
+        // Se não encontrou com o método acima, tenta localizar o primeiro osso com "hand" no nome
+        if (!rightHandBone) {
+            console.warn('Não foi possível encontrar o osso da mão direita com os nomes comuns. Procurando por qualquer osso de mão...');
+            
+            // Função alternativa para encontrar qualquer osso de mão
+            const findAnyHandBone = (object) => {
+                if (object.isBone) {
+                    const name = object.name.toLowerCase();
+                    if (name.includes('hand')) {
+                        console.log('Encontrado um osso de mão:', object.name);
+                        return object;
+                    }
+                }
+                
+                if (object.children) {
+                    for (const child of object.children) {
+                        const result = findAnyHandBone(child);
+                        if (result) return result;
+                    }
+                }
+                
+                return null;
+            };
+            
+            rightHandBone = findAnyHandBone(model);
+        }
+        
+        // Se ainda não encontrou, pega o primeiro osso disponível como último recurso
+        if (!rightHandBone && allBoneNames.length > 0) {
+            console.warn('Nenhum osso de mão encontrado. Usando o primeiro osso disponível como último recurso.');
+            
+            const findFirstBone = (object) => {
+                if (object.isBone) {
+                    console.log('Usando primeiro osso encontrado:', object.name);
+                    return object;
+                }
+                
+                if (object.children) {
+                    for (const child of object.children) {
+                        const result = findFirstBone(child);
+                        if (result) return result;
+                    }
+                }
+                
+                return null;
+            };
+            
+            rightHandBone = findFirstBone(model);
+        }
+        
+        return rightHandBone;
+    }
+    
+    // Método para imprimir a hierarquia do modelo para depuração
+    printModelHierarchy(obj, indent = 0) {
+        const spacing = ' '.repeat(indent * 2);
+        const isBone = obj.isBone ? ' [BONE]' : '';
+        const isMesh = obj.isMesh ? ' [MESH]' : '';
+        console.log(`${spacing}${obj.name || 'unnamed'}${isBone}${isMesh}`);
+        
+        if (obj.children && obj.children.length > 0) {
+            obj.children.forEach(child => {
+                this.printModelHierarchy(child, indent + 1);
+            });
+        }
     }
     
     // Novo: Método para reproduzir animações
@@ -290,12 +598,21 @@ export class Player {
             // Atualiza a posição dos controles
             controlsPosition.add(direction.multiplyScalar(speed));
             
-            // Atualiza a posição do modelo para seguir os controles
+            // Calcula uma posição atrás da câmera para o modelo
+            const modelDirection = new THREE.Vector3();
+            this.camera.getWorldDirection(modelDirection);
+            modelDirection.y = 0;
+            modelDirection.normalize();
+            
+            // Posiciona o modelo atrás da câmera
             this.model.position.set(
-                controlsPosition.x,
-                controlsPosition.y - 0.7, // Ajuste para a altura da "cabeça"
-                controlsPosition.z
+                controlsPosition.x - modelDirection.x * this.modelOffset,
+                controlsPosition.y - 2.3, // Ajustado para manter consistência com a inicialização
+                controlsPosition.z - modelDirection.z * this.modelOffset
             );
+            
+            // Marca que o jogador está se movendo
+            this.isMoving = true;
             
             // Atualiza a posição dos dados do jogador
             this.updatePositionData();
@@ -325,12 +642,21 @@ export class Player {
             // Atualiza a posição dos controles (movimento para trás)
             controlsPosition.add(direction.multiplyScalar(-speed));
             
-            // Atualiza a posição do modelo para seguir os controles
+            // Calcula uma posição atrás da câmera para o modelo
+            const modelDirection = new THREE.Vector3();
+            this.camera.getWorldDirection(modelDirection);
+            modelDirection.y = 0;
+            modelDirection.normalize();
+            
+            // Posiciona o modelo atrás da câmera
             this.model.position.set(
-                controlsPosition.x,
-                controlsPosition.y - 0.7, // Ajuste para a altura da "cabeça"
-                controlsPosition.z
+                controlsPosition.x - modelDirection.x * this.modelOffset,
+                controlsPosition.y - 2.3, // Ajustado para manter consistência com a inicialização
+                controlsPosition.z - modelDirection.z * this.modelOffset
             );
+            
+            // Marca que o jogador está se movendo
+            this.isMoving = true;
             
             // Atualiza a posição dos dados do jogador
             this.updatePositionData();
@@ -360,12 +686,21 @@ export class Player {
             // Atualiza a posição dos controles
             controlsPosition.add(leftDirection.multiplyScalar(speed));
             
-            // Atualiza a posição do modelo para seguir os controles
+            // Calcula uma posição atrás da câmera para o modelo
+            const modelDirection = new THREE.Vector3();
+            this.camera.getWorldDirection(modelDirection);
+            modelDirection.y = 0;
+            modelDirection.normalize();
+            
+            // Posiciona o modelo atrás da câmera
             this.model.position.set(
-                controlsPosition.x,
-                controlsPosition.y - 0.7, // Ajuste para a altura da "cabeça"
-                controlsPosition.z
+                controlsPosition.x - modelDirection.x * this.modelOffset,
+                controlsPosition.y - 2.3, // Ajustado para manter consistência com a inicialização
+                controlsPosition.z - modelDirection.z * this.modelOffset
             );
+            
+            // Marca que o jogador está se movendo
+            this.isMoving = true;
             
             // Atualiza a posição dos dados do jogador
             this.updatePositionData();
@@ -395,12 +730,21 @@ export class Player {
             // Atualiza a posição dos controles
             controlsPosition.add(rightDirection.multiplyScalar(speed));
             
-            // Atualiza a posição do modelo para seguir os controles
+            // Calcula uma posição atrás da câmera para o modelo
+            const modelDirection = new THREE.Vector3();
+            this.camera.getWorldDirection(modelDirection);
+            modelDirection.y = 0;
+            modelDirection.normalize();
+            
+            // Posiciona o modelo atrás da câmera
             this.model.position.set(
-                controlsPosition.x,
-                controlsPosition.y - 0.7, // Ajuste para a altura da "cabeça"
-                controlsPosition.z
+                controlsPosition.x - modelDirection.x * this.modelOffset,
+                controlsPosition.y - 2.3, // Ajustado para manter consistência com a inicialização
+                controlsPosition.z - modelDirection.z * this.modelOffset
             );
+            
+            // Marca que o jogador está se movendo
+            this.isMoving = true;
             
             // Atualiza a posição dos dados do jogador
             this.updatePositionData();
@@ -458,9 +802,27 @@ export class Player {
         this.isFishing = true;
         this.action = 'fishing';
         
+        console.log('Iniciando pesca...');
+        
         // Reproduz a animação de pesca
         if (this.characterModel && this.mixer) {
             this.playAnimation('fishing');
+        }
+        
+        // Mostra o modelo da vara de pesca FBX se estiver disponível
+        if (this.fishingRodModel) {
+            console.log('Mostrando vara de pesca modelo FBX');
+            this.fishingRodModel.visible = true;
+            
+            // Garante que todos os meshes da vara estão visíveis
+            this.fishingRodModel.traverse(child => {
+                if (child.isMesh) {
+                    child.visible = true;
+                    console.log('Tornando mesh visível:', child.name);
+                }
+            });
+        } else {
+            console.warn('Modelo da vara de pesca não está disponível!');
         }
         
         // Torna a linha visível
@@ -503,12 +865,21 @@ export class Player {
     stopFishing() {
         if (!this.isFishing) return;
         
+        console.log('Parando de pescar...');
+        
         this.isFishing = false;
         this.action = 'idle';
         
         // Volta para a animação de idle
         if (this.characterModel && this.mixer) {
             this.playAnimation('idle');
+        }
+        
+        // Esconde o modelo da vara de pesca FBX
+        if (this.fishingRodModel) {
+            console.log('Escondendo vara de pesca modelo FBX');
+            // Comentando a linha abaixo para manter a vara sempre visível durante debug
+            // this.fishingRodModel.visible = false;
         }
         
         // Marca que está recolhendo para parar a animação de mordida
@@ -721,6 +1092,39 @@ export class Player {
             this.nameTag.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
         }
         
+        // Se for o jogador local, rotaciona o modelo 3D para seguir a direção da câmera
+        if (this.isLocal && this.camera && this.characterModel) {
+            const direction = new THREE.Vector3();
+            this.camera.getWorldDirection(direction);
+            
+            // Calcula o ângulo de rotação no eixo Y (yaw)
+            const rotationY = Math.atan2(direction.x, direction.z);
+            
+            // Aplica a rotação ao modelo
+            this.characterModel.rotation.y = rotationY;
+        }
+
+        // Atualiza a animação com base no movimento (apenas se não estiver pescando)
+        if (this.characterModel && this.mixer && !this.isFishing) {
+            // Verifica se o jogador está se movendo
+            if (this.isMoving) {
+                // Reproduz a animação de caminhada se disponível
+                if (this.animations['walking'] && 
+                    (!this.currentAnimation || this.currentAnimation._clip !== this.animations['walking'])) {
+                    this.playAnimation('walking');
+                }
+            } else {
+                // Volta para a animação de idle
+                if (this.animations['idle'] && 
+                    (!this.currentAnimation || this.currentAnimation._clip !== this.animations['idle'])) {
+                    this.playAnimation('idle');
+                }
+            }
+            
+            // Reinicia a flag de movimento para o próximo frame
+            this.isMoving = false;
+        }
+        
         // Atualiza o mixer de animação se existir
         if (this.mixer) {
             this.mixer.update(this.clock.getDelta());
@@ -750,6 +1154,10 @@ export class Player {
         if (this.isLocal && this.firstPersonRod && this.camera) {
             this.camera.remove(this.firstPersonRod);
         }
+        
+        // Remove referências ao modelo da vara de pesca
+        this.fishingRodModel = null;
+        this.rightHandBone = null;
     }
     
     onFishBite(isHitting, status = null) {
