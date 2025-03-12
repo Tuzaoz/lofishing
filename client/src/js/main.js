@@ -496,11 +496,15 @@ class Game {
     }
 
     setupSocketConnection() {
-        this.socket = io();
+        // Connect to the ngrok URL instead of the default
+        this.socket = io('https://ff76-2804-1b2-6243-6aed-6169-b0c0-9d5a-f1ed.ngrok-free.app', {
+            transports: ['websocket', 'polling'],
+            withCredentials: true
+        });
 
         // Conexão estabelecida com o servidor
         this.socket.on('connect', () => {
-            console.log('Conectado ao servidor');
+            console.log('Conectado ao servidor via ngrok');
             
             // Envia o nome do jogador ao servidor
             this.socket.emit('playerJoin', { name: this.playerName });
@@ -566,8 +570,14 @@ class Game {
             }
             
             // Atualiza a posição do jogador
-            if (data.id !== this.playerId) {
-                this.players[data.id].updatePosition(data.position);
+            if (data.id !== this.playerId && this.players[data.id]) {
+                // Atualiza diretamente as propriedades
+                this.players[data.id].position = data.position;
+                this.players[data.id].model.position.set(
+                    data.position.x, 
+                    data.position.y + 1, 
+                    data.position.z
+                );
                 this.ui.updatePlayerScore(data.id, data.score);
             }
         });
