@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Water } from 'three/examples/jsm/objects/Water.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { io } from 'socket.io-client';
 import { FishingGame } from './FishingGame.js';
 import { Player } from './Player.js';

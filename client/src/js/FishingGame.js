@@ -390,51 +390,50 @@ export class FishingGame {
     }
     
     catchCurrentFish() {
-        if (!this.currentFish) return;
+        if (!this.fishBiting || !this.currentFish) return;
         
-        // Adiciona horário de captura
+        // Cria efeito visual de captura
+        this.createCatchEffect();
+        
+        // Registra o peixe capturado
         const fish = {
             ...this.currentFish,
-            catchTime: new Date()
+            timestamp: Date.now()
         };
         
-        // Adiciona o peixe à lista de peixes pegos
         this.caughtFishes.push(fish);
         
-        // Limpa o estado de mordida
+        // Notifica o jogador via callback
+        if (this.fishCaughtCallback) {
+            this.fishCaughtCallback(fish);
+        }
+        
+        // Atualizações vizuais e de estado
+        if (this.fishingMessageCallback) {
+            this.fishingMessageCallback(`Você pegou um ${fish.name} ${fish.rarity}!`, "success");
+        }
+
+        // Para os efeitos visuais de mordida
+        if (this.onFishBiteEnd) {
+            this.onFishBiteEnd('catch'); // Passa um parâmetro para indicar que o peixe foi capturado
+        }
+        
+        // Limpa o estado
         this.fishBiting = false;
         this.currentFish = null;
         
-        // Cancela o timer de mordida
         if (this.bitingTimer) {
             clearTimeout(this.bitingTimer);
             this.bitingTimer = null;
         }
         
-        // Chama o callback para parar efeitos visuais
-        if (this.onFishBiteEnd) {
-            this.onFishBiteEnd();
+        if (this.timerDisplayCallback) {
+            this.timerDisplayCallback(null);
         }
-        
-        // Cria efeito visual de peixe pego
-        this.createCatchEffect();
-        
-        // Restaura a aparência do flutuador
-        this.updateFloaterForBiting(false);
         
         // Notifica o servidor
         if (this.socket) {
             this.socket.emit('fishCaught', { fish });
-        }
-        
-        // Chama o callback para atualizar a UI
-        if (this.fishCaughtCallback) {
-            this.fishCaughtCallback(fish);
-        }
-        
-        // Exibe mensagem na UI
-        if (this.fishingMessageCallback) {
-            this.fishingMessageCallback(`Peixe capturado: ${fish.name}!`, "success");
         }
     }
     

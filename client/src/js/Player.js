@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 
 export class Player {
     constructor(scene, id, name, isLocal, fishingGame, position = { x: 0, y: 0, z: 0 }, camera = null, controls = null) {
@@ -25,6 +26,13 @@ export class Player {
         this.biteAnimation = null; // Para controlar a animação quando um peixe morde
         this.isReeling = false; // Indica se está recolhendo a linha
         
+        // Novo: variáveis para o modelo 3D e animações
+        this.characterModel = null;
+        this.mixer = null;
+        this.animations = {};
+        this.currentAnimation = null;
+        this.clock = new THREE.Clock();
+        
         // Se inscreve nos eventos do jogo de pesca
         if (this.isLocal && fishingGame) {
             fishingGame.onFishBiteStart = () => this.onFishBite(true);
@@ -38,12 +46,17 @@ export class Player {
         // Cria um modelo simples para o jogador (um cilindro representando uma pessoa)
         const geometry = new THREE.CylinderGeometry(0.5, 0.5, 2, 16);
         const material = new THREE.MeshLambertMaterial({ 
-            color: this.isLocal ? 0x0088ff : 0xff8800 
+            color: this.isLocal ? 0x0088ff : 0xff8800,
+            transparent: true,
+            opacity: 0 // Torna invisível inicialmente
         });
         this.model = new THREE.Mesh(geometry, material);
         this.model.position.set(this.position.x, this.position.y + 1, this.position.z);
         this.model.castShadow = true;
         this.scene.add(this.model);
+        
+        // Carrega o modelo 3D (fishing.fbx)
+        this.loadCharacterModel();
         
         // Cria o nome do jogador como texto flutuante
         this.createNameTag();
@@ -66,6 +79,77 @@ export class Player {
             // Para outros jogadores, usa a vara de pesca normal
             this.createFishingRod();
         }
+    }
+    
+    // Novo: Método para carregar o modelo 3D
+    loadCharacterModel() {
+        const loader = new FBXLoader();
+        loader.load('assets/fishing.fbx', (fbx) => {
+            this.characterModel = fbx;
+            
+            // Ajuste de escala e posição
+            this.characterModel.scale.set(0.02, 0.02, 0.02);
+            this.characterModel.position.y = -1; // Ajuste conforme necessário
+            
+            // Adiciona o modelo ao jogador
+            this.model.add(this.characterModel);
+            
+            // Configura o mixer para animações
+            this.mixer = new THREE.AnimationMixer(this.characterModel);
+            
+            // Armazena as animações disponíveis
+            if (fbx.animations && fbx.animations.length > 0) {
+                fbx.animations.forEach((animation) => {
+                    // Identifica animações pelo nome
+                    const name = animation.name.toLowerCase();
+                    this.animations[name] = animation;
+                });
+                
+                // Se não houver animação de pesca ou idle especifica, usa as animações disponíveis
+                if (!this.animations['fishing'] && fbx.animations.length > 0) {
+                    this.animations['fishing'] = fbx.animations[0];
+                }
+                
+                if (!this.animations['idle'] && fbx.animations.length > 1) {
+                    this.animations['idle'] = fbx.animations[1];
+                } else if (!this.animations['idle'] && fbx.animations.length > 0) {
+                    this.animations['idle'] = fbx.animations[0];
+                }
+                
+                // Inicia a animação de idle
+                this.playAnimation('idle');
+            }
+            
+            console.log('Modelo 3D carregado com sucesso', this.animations);
+        }, 
+        // Progress callback
+        (xhr) => {
+            console.log((xhr.loaded / xhr.total * 100) + '% carregado');
+        },
+        // Error callback 
+        (error) => {
+            console.error('Erro ao carregar o modelo 3D', error);
+        });
+    }
+    
+    // Novo: Método para reproduzir animações
+    playAnimation(name, fadeIn = 0.5) {
+        if (!this.mixer || !this.animations[name]) {
+            console.warn(`Animação '${name}' não encontrada`);
+            return;
+        }
+        
+        // Para a animação atual se existir
+        if (this.currentAnimation) {
+            this.currentAnimation.fadeOut(fadeIn);
+        }
+        
+        // Inicia a nova animação
+        const animation = this.mixer.clipAction(this.animations[name]);
+        animation.reset().fadeIn(fadeIn).play();
+        this.currentAnimation = animation;
+        
+        console.log(`Reproduzindo animação: ${name}`);
     }
     
     createNameTag() {
@@ -374,6 +458,11 @@ export class Player {
         this.isFishing = true;
         this.action = 'fishing';
         
+        // Reproduz a animação de pesca
+        if (this.characterModel && this.mixer) {
+            this.playAnimation('fishing');
+        }
+        
         // Torna a linha visível
         if (this.fishingLine) {
             this.fishingLine.material.visible = true;
@@ -416,6 +505,11 @@ export class Player {
         
         this.isFishing = false;
         this.action = 'idle';
+        
+        // Volta para a animação de idle
+        if (this.characterModel && this.mixer) {
+            this.playAnimation('idle');
+        }
         
         // Marca que está recolhendo para parar a animação de mordida
         this.isReeling = true;
@@ -607,22 +701,29 @@ export class Player {
     }
     
     update() {
-        // Atualiza a posição da tag de nome para seguir o jogador na tela
-        if (this.nameTag && !this.isLocal) {
-            const vector = new THREE.Vector3();
-            const widthHalf = window.innerWidth / 2;
-            const heightHalf = window.innerHeight / 2;
+        // Atualiza a posição da tag de nome
+        if (this.nameTag) {
+            const position = this.getPosition();
+            const vector = new THREE.Vector3(position.x, position.y + 2.5, position.z);
+            // Usar a câmera atual da cena, não procurar por um objeto com nome 'camera'
+            if (this.camera) {
+                vector.project(this.camera);
+            } else if (this.fishingGame && this.fishingGame.camera) {
+                vector.project(this.fishingGame.camera);
+            } else {
+                // Se não encontrar a câmera, não tenta renderizar a tag
+                return;
+            }
             
-            // Posição do modelo convertida para coordenadas de tela
-            this.model.updateWorldMatrix(true, false);
-            vector.setFromMatrixPosition(this.model.matrixWorld);
-            vector.project(this.fishingGame.camera);
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
             
-            vector.x = (vector.x * widthHalf) + widthHalf;
-            vector.y = -(vector.y * heightHalf) + heightHalf;
-            
-            this.nameTag.style.left = `${vector.x - this.nameTag.offsetWidth / 2}px`;
-            this.nameTag.style.top = `${vector.y - 40}px`; // 40px acima do jogador
+            this.nameTag.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+        }
+        
+        // Atualiza o mixer de animação se existir
+        if (this.mixer) {
+            this.mixer.update(this.clock.getDelta());
         }
     }
     
@@ -651,54 +752,72 @@ export class Player {
         }
     }
     
-    onFishBite(isHitting) {
-        // Chamado quando um peixe começa ou para de morder a isca
-        if (!this.isLocal || !this.firstPersonRod) return;
+    onFishBite(isHitting, status = null) {
+        // Se não estiver pescando, ou se estiver recolhendo a linha, ignora
+        if (!this.isFishing || this.isReeling) return;
         
-        if (isHitting) {
-            // Inicia animação de vibração da vara quando um peixe morde
-            if (this.biteAnimation) {
-                clearInterval(this.biteAnimation);
-            }
-            
-            let intensity = 0.05; // Intensidade inicial da vibração
-            let time = 0;
-            
-            this.biteAnimation = setInterval(() => {
-                if (!this.isFishing || !this.firstPersonRod || this.isReeling) {
-                    if (this.biteAnimation) {
-                        clearInterval(this.biteAnimation);
-                        this.biteAnimation = null;
-                    }
-                    return;
+        // Se for o jogador local, anima a vara de pesca de acordo com o estado do peixe
+        if (this.isLocal && this.firstPersonRod) {
+            // Se um peixe está mordendo a isca
+            if (isHitting) {
+                // Reproduz uma animação específica para quando o peixe morde
+                if (this.characterModel && this.mixer && this.animations['bite']) {
+                    this.playAnimation('bite', 0.2);
                 }
                 
-                // Aplica vibração aleatória à vara
-                if (this.initialRodRotation) {
-                    this.firstPersonRod.rotation.x = this.initialRodRotation.x + (Math.random() - 0.5) * intensity;
-                    this.firstPersonRod.rotation.z = this.initialRodRotation.z + (Math.random() - 0.5) * intensity;
-                    
-                    // Intensidade varia com o tempo para um efeito mais realista
-                    time += 0.1;
-                    intensity = 0.05 + Math.sin(time) * 0.03;
+                // Cria uma animação de vibração da vara
+                const originalRotation = {
+                    x: this.firstPersonRod.rotation.x,
+                    y: this.firstPersonRod.rotation.y,
+                    z: this.firstPersonRod.rotation.z
+                };
+                
+                // Limpa animação anterior se existir
+                if (this.biteAnimation) {
+                    clearInterval(this.biteAnimation);
                 }
                 
-                // Agita o carretel um pouco também
-                if (this.reel) {
-                    this.reel.rotation.z += Math.random() * 0.1;
+                // Cria uma nova animação de vibração mais intensa
+                this.biteAnimation = setInterval(() => {
+                    // Vibração aleatória da vara
+                    this.firstPersonRod.rotation.x = originalRotation.x + (Math.random() - 0.5) * 0.3;
+                    this.firstPersonRod.rotation.y = originalRotation.y + (Math.random() - 0.5) * 0.1;
+                    this.firstPersonRod.rotation.z = originalRotation.z + (Math.random() - 0.5) * 0.1;
+                }, 50);
+            } else {
+                // Quando o peixe para de morder, volta para a posição original
+                if (this.biteAnimation) {
+                    clearInterval(this.biteAnimation);
+                    this.biteAnimation = null;
                 }
-            }, 50);
-        } else {
-            // Para a animação de vibração
-            if (this.biteAnimation) {
-                clearInterval(this.biteAnimation);
-                this.biteAnimation = null;
-            }
-            
-            // Restaura a rotação original da vara
-            if (this.firstPersonRod && this.initialRodRotation) {
+                
+                // Retorna a vara à posição da animação de pesca
                 this.firstPersonRod.rotation.x = this.initialRodRotation.x;
+                this.firstPersonRod.rotation.y = this.initialRodRotation.y;
                 this.firstPersonRod.rotation.z = this.initialRodRotation.z;
+                
+                // Se foi uma captura bem-sucedida
+                if (status === 'catch' && this.characterModel && this.mixer) {
+                    // Reproduz uma animação de captura, se disponível
+                    if (this.animations['catch']) {
+                        this.playAnimation('catch', 0.3);
+                        
+                        // Volta para a animação de pesca após a animação de captura
+                        setTimeout(() => {
+                            if (this.isFishing) {
+                                this.playAnimation('fishing');
+                            }
+                        }, 2000); // Duração aproximada da animação de captura
+                    } else {
+                        // Se não houver animação de captura, volta para a animação de pesca
+                        this.playAnimation('fishing');
+                    }
+                } else {
+                    // Se não foi captura ou não temos o modelo, volta para a animação normal de pesca
+                    if (this.characterModel && this.mixer) {
+                        this.playAnimation('fishing');
+                    }
+                }
             }
         }
     }
