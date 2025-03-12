@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoFishing - Jogo de Pesca Multiplayer</title>
+    <link rel="stylesheet" href="./src/css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="ui-container">
+            <div id="score-board">
+                <h2>Pontuação</h2>
+                <div id="player-score">0</div>
+            </div>
+            <div id="inventory">
+                <h2>Inventário</h2>
+                <ul id="fish-list"></ul>
+            </div>
+            <div id="player-list">
+                <h2>Jogadores</h2>
+                <ul id="online-players"></ul>
+            </div>
+        </div>
+        <div id="login-screen">
+            <div class="login-container">
+                <h1>LoFishing</h1>
+                <input type="text" id="player-name" placeholder="Seu nome">
+                <button id="start-game">Começar a Pescar</button>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="./src/js/main.js"></script>
+</body>
+</html> 

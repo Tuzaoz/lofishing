@@ -1,0 +1,7 @@
+# Este é um placeholder para a textura de água
+
+A textura waternormals.jpg é necessária para o funcionamento do jogo.
+Você pode baixar a textura de exemplo da biblioteca Three.js no seguinte link:
+https://threejs.org/examples/textures/waternormals.jpg
+
+Salve-a neste diretório (client/public/assets/) para que o jogo funcione corretamente. 
